@@ -24,7 +24,7 @@
 ;; Suite 330, Boston, MA  02111-1307  USA
 ;;
 ;;
-;; $Id: inflate.cl,v 2.5 2007/04/17 21:27:39 layer Exp $
+;; $Id: inflate.cl,v 2.6 2008/12/15 19:55:27 duane Exp $
 
 ;; Description:
 ;;   inflate a stream of bytes which was compressed with the Deflate
@@ -897,6 +897,10 @@ into the inflate buffer.
     
     t))
 
+;; [bug17925]: add print-object method
+(defmethod print-object ((stream inflate-stream) s)
+  (print-unreadable-object (stream s :identity *print-escape* :type t)
+    (format s "inflating ~s" (excl::stream-input-handle stream))))
 
 
 (defmethod device-read ((p inflate-stream) buffer start end blocking)
