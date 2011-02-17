@@ -69,8 +69,16 @@
 
 (defvar *libz-dll-loaded* nil)
 
+    
 (if* (not *libz-dll-loaded*)
-   then (load (util.string:string+ "libz." sys::*dll-type*) :foreign t)
+   then (handler-case
+	 (load (util.string:string+ "libz." sys::*dll-type*) :foreign t)
+	 (error (c)
+		(error "~
+This module require the compression library named libz be present ~
+on the machine for the deflate module to load. ~
+See http://zlib.net/ for versions for various platforms.~% failure ~
+condition: ~a~%" c)))
 	(setq *libz-dll-loaded* t))
 
 
