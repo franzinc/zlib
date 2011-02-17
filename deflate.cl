@@ -12,20 +12,11 @@
 (in-package :util.zip)
 
 
-(provide :deflate)
 
 (eval-when (compile load eval)
 (defconstant *zlib-in-buffer-size* (* 16 1024))
 (defconstant *zlib-out-buffer-size* (* 17 1024))
 )
-
-
-;; constants needed for resourcing for static buffers
-
-(defconstant *deflate-buffer-z-stream* 0)
-(defconstant *deflate-buffer-in*       1)
-(defconstant *deflate-buffer-out*      2)
-
 
 
 
@@ -67,20 +58,23 @@
 ;;  (deflate-stream-vector-combined str)
 ;;
 
-(defvar *libz-dll-loaded* nil)
+(defvar *zlib-dll-loaded* nil)
 
     
-(if* (not *libz-dll-loaded*)
+(if* (not *zlib-dll-loaded*)
    then (handler-case
 	 (load (util.string:string+ "libz." sys::*dll-type*) :foreign t)
 	 (error (c)
 		(error "~
-This module require the compression library named libz be present ~
+This module require the compression library named libz (on Linix) be present ~
 on the machine for the deflate module to load. ~
 See http://zlib.net/ for versions for various platforms.~% failure ~
 condition: ~a~%" c)))
-	(setq *libz-dll-loaded* t))
+	(setq *zlib-dll-loaded* t))
 
+
+(pushnew :zlib-deflate *features*)
+(provide :deflate)
 
 (ff:def-foreign-type z-stream
     (:struct (next-in (* :void))  ; next input byte
