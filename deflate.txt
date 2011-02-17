@@ -1,0 +1,139 @@
+
+deflate module documentation
+
+[this is temporary until the documentation is property formatted
+and merged with other documentation]
+
+
+The deflate module provides a stream interface to the widely
+available libz compression library.  libz is not included and is
+assumee to be on your machine.
+
+
+
+
+
+Functions are in the util.zip package.
+The module exports
+
+class:
+  deflate-stream
+
+functions
+  deflate-target-stream
+  deflate-stream-vector
+  deflate-stream-vector-combined
+
+
+
+  
+
+
+This module implements the deflate-stream.  A deflate-stream
+accepts characters and byte and causes them to be compressed
+and sent to a target.
+
+The target can either another stream, or it can be a vector.
+In the case of a vector the deflate-stream will collect the
+complete deflation of what is written to it in a sequence of
+vectors, initially using the vector passed in as the target and
+then allocating new vectors as necessary.
+
+Usage:
+(make-instance 'deflate-stream :target target-spec  :compression compress-spec)
+
+The target-spec is a stream or a simple vector element type (unsigned-byte 8).
+
+The compress-spec is either :gzip or :deflate (where :gzip is the default).
+
+:gzip is the preferred format as the result can be uncompressed with
+the inflate-stream (be sure to specify :skip-gzip-header t to the
+make-instance of  inflate-stream).   The :gzip format output can
+also be uncompressed with the gunzip program fount on Unix.
+
+
+
+
+
+Stream as a target-spec
+
+If you pass a stream as the target-spec then as you write characters
+and bytes to the deflate-stream, the bytes resulting from deflation
+will be written to the given stream.  There is a lot of buffering
+going on in this stream and the compression library.  Therefore you
+may not see the results in your target-spec stream immeidately.
+
+When you close the deflate-stream the last bytes in all the buffers
+will be sent through deflation and the end of deflation record will
+be written to the target-spec stream.
+
+The target-spec stream will NOT be closed.  It is the callers responsibility
+to close the stream passed in as the target-spec
+
+
+The function
+(deflate-target-stream deflate-stream)
+
+will return that target-spec stream used by the deflate-stream
+
+
+
+;
+
+
+Octet vector as a target-spec
+
+Passing a simple vector of type (unsigned-byte 8) as the target-spec
+is telling the deflate-stream that you wish to collect the deflation
+result in vectors in the lisp heap.
+
+After you close the deflate-stream you can retrieve the result of
+deflation in one of two ways:
+
+
+
+(deflate-stream-vector-combined deflate-stream)
+
+returns two values
+    1. octet vector
+    2. number of bytes of actual data
+
+this says that the result of deflation is found in the first N bytes
+of the vector returned by the first value.  The second value returned is N.
+
+
+
+
+
+(deflate-stream-vector deflate-stream)
+
+returns three values
+   1. the newest vector
+   2. the number of byte of actual data in the newest vector
+   3. a list of previous vectors holding data in reverse order
+
+for example if the three returned values were
+
+    v
+    100
+    (c b a)
+
+then the deflated result is found by combining in this order:
+    all of a
+    all of b
+    all of c
+    the first 100 bytes of v
+
+The deflate-stream-vector-combined function does the combination
+described above to produce its results.  This results in
+a new vector allocation and then copying that wouldn't be necessary
+if you're prepared to work with the raw results from deflate-stream-vector
+
+
+    
+
+
+
+
+
+

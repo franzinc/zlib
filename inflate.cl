@@ -180,51 +180,64 @@ that describe the custome huffman tree are themselves huffman coded.
   ;; see check_header in gzio.c in rpm zlib-1.1.3 (or variant)
   ;; for details on what's in the header.
   
-  (let (method flags)
+  (let (method flags (bytes-read 0))
     
     ; look for magic number
     (if* (not (eql #x1f (read-byte p)))
        then ; not a gzip header, may be a deflate block
 	    (unread-char (code-char #x1f) p)
 	    (return-from skip-gzip-header nil))
-    
+    (incf bytes-read)
 
     ; now check the second magic number
     (if* (not (eql #x8b (read-byte p)))
        then (error "non gzip magic number"))
-  
+
+    (incf bytes-read)
+    
     (setq method (read-byte p)
 	  flags  (read-byte p))
 
+    (incf bytes-read 2)
+    
     (if* (or (not (eql method z_deflated))
 	     (not (zerop (logand flags gz_reserved))))
        then (error "bad method/flags in header"))
   
     ; discard time, xflags and os code */
     (dotimes (i 6) (read-byte p))
-  
+
+    (incf bytes-read 6)
+    
     ; discard extra field if present
     (if* (logtest flags gz_extra_field)
        then (let ((length (+ (read-byte p)
 			     (ash (read-byte p) 8))))
-	      (dotimes (i length) (read-byte p))))
+	      (dotimes (i length) (read-byte p))
+	      (incf bytes-read (+ length 2))))
   
     (if* (logtest flags gz_orig_name)
        then ; discard name of file, null terminated
 	    (do ((val (read-byte p) (read-byte p)))
-		((zerop val))))
+		((zerop val)
+		 (incf bytes-read))
+	      (incf bytes-read)))
   
     (if* (logtest flags gz_comment)
        then ; discard comment, null terminated
 	    (do ((val (read-byte p) (read-byte p)))
-		((zerop val))))
+		((zerop val)
+		 (incf bytes-read))
+	      (incf bytes-read)))
   
     (if* (logtest flags gz_head_crc)
        then ; discard header crc
-	    (dotimes (i 2) (read-byte p)))
+	    (dotimes (i 2) (read-byte p))
+	    (incf bytes-read 2))
 
+    
     ; success!
-    t	
+    bytes-read	
     ))
 		
 ;;;----------- end gzip support
@@ -238,6 +251,8 @@ that describe the custome huffman tree are themselves huffman coded.
   stream
   last-byte	; last byte read, possibly two combined bytes too
   bits		; bits left of last byte to use
+  (bytes-read 0)
+  bytes-to-read  ; number of bytes to read before eof (nil if no limit)
   )
 
 (defparameter *maskarray*
@@ -251,9 +266,11 @@ that describe the custome huffman tree are themselves huffman coded.
 		   #x1fff #x3fff #x7fff #xffff)))
 
 ;; bit reader
-(defun new-bit-reader (stream)
+(defun new-bit-reader (stream &key bytes-to-read (bytes-read 0))
   ; create and initialize bit reader
-  (make-bit-reader :stream stream :last-byte 0 :bits 0))
+  (make-bit-reader :stream stream :last-byte 0 :bits 0
+		   :bytes-to-read bytes-to-read
+		   :bytes-read bytes-read))
 
 (defun reset-bit-reader (br)
   ; clear out unused bit of the current byte
@@ -285,10 +302,20 @@ that describe the custome huffman tree are themselves huffman coded.
 		      (return last-byte)
 		      )
 	 else ; need a new byte
-	      (let ((new-byte (read-byte (bit-reader-stream br))))
-		(setq last-byte (+ last-byte
-				   (ash new-byte bits)))
-		(incf bits 8))))))
+	      (let ((bytes-left (bit-reader-bytes-to-read br)))
+		
+		(if* (eq 0 bytes-left)
+		   then (error "end of file on bit reader"))
+	      
+		(let ((new-byte (read-byte (bit-reader-stream br))))
+
+		  (incf (bit-reader-bytes-read br))
+		  (if* bytes-left
+		     then (setf (bit-reader-bytes-to-read br) (1- bytes-left)))
+		
+		  (setq last-byte (+ last-byte
+				     (ash new-byte bits)))
+		  (incf bits 8)))))))
 
 
 
@@ -786,9 +813,14 @@ that describe the custome huffman tree are themselves huffman coded.
 
 ;; external interface
 ;;  open a atream p to a file containing the compressed data.
+;;
 ;;  If this file may have a gzip header on it call (skip-gzip-header p)
 ;;  then  (make-instance 'inflate-stream :input-handle p)
 ;;  will return a stream which can be read to recover the uncompressed data
+;; 
+;;  You can also just just call 
+;;  (make-instance 'inflate-stream :input-handle p :skip-gzip-header t)
+;;  and the header will be skipped (if present)
 ;; 
 ;;  closing the inflate-stream will not close stream p. that must
 ;;  be done separately.
@@ -851,11 +883,22 @@ into the inflate buffer.
    (inflate-buffer-end   
     :initform 0
     :accessor inflate-buffer-end)
-   
+
    (cached-buffs 
     :initform nil
     :accessor cached-buffs)
 
+   ; counters
+   (inflated-bytes
+    ;; bytes returned by inflation code
+    :initform 0
+    :accessor inflate-inflated-bytes)
+   
+   (passed-to-user
+    ;; bytes passed to owner of this inflate stream
+    :initform 0
+    :accessor inflate-passed-to-user)
+   
    (at-eof :initform nil :accessor inflate-stream-eof) ; true when read no more
   ))
 
@@ -874,6 +917,8 @@ into the inflate buffer.
     (install-single-channel-character-strategy
      p (stream-external-format input-handle) nil)
     
+    (setf (stream-external-format p) (stream-external-format input-handle))
+    
     (add-stream-instance-flags p :input :simple)
 
     ; empty 32k buffer:
@@ -890,7 +935,16 @@ into the inflate buffer.
       (getf (slot-value input-handle 'excl::plist) 'excl::filename))
 		 
     ;; specific to the inflate stream
-    (setf (inflate-stream-br p) (new-bit-reader input-handle))
+    (let ((initial-count 0))
+      (if* (getf options :skip-gzip-header)
+	 then (setq initial-count
+		(skip-gzip-header input-handle))
+	      )
+    
+      (setf (inflate-stream-br p) (new-bit-reader input-handle
+						  :bytes-to-read 
+						  (getf options :content-length)
+						  :bytes-read initial-count)))
     (setf (inflate-stream-buffer p)
       (make-array (* 32 1024) :element-type '(unsigned-byte 8)))
     
@@ -900,7 +954,18 @@ into the inflate buffer.
 ;; [bug17925]: add print-object method
 (defmethod print-object ((stream inflate-stream) s)
   (print-unreadable-object (stream s :identity *print-escape* :type t)
-    (format s "inflating ~s" (excl::stream-input-handle stream))))
+    (format s "inflating ~s" (excl::stream-input-handle stream))
+    (format s "ef ~s, in: ~s, inflated ~d, used: ~d of "
+	    (excl::ef-name (stream-external-format stream))
+	    (let ((br (inflate-stream-br stream)))
+	      (if* br
+		 then (bit-reader-bytes-read br)))
+	    (inflate-inflated-bytes stream)
+	    (inflate-passed-to-user stream)
+	    (slot-value stream 'excl::input-handle)
+	    )
+		      
+    ))
 
 
 (defmethod device-read ((p inflate-stream) buffer start end blocking)
@@ -909,6 +974,9 @@ into the inflate buffer.
   (if* (null buffer) then (setq buffer (slot-value p 'excl::buffer)))
   
   (if* (null end) then (setq end (length buffer)))
+
+  ; perhaps wishful thinking, as we haven't copied them yet
+  
   
   (loop
     ; first grab from the cached buffers
@@ -927,6 +995,7 @@ into the inflate buffer.
 		 :end2 fromend)
 	(let ((copied (min (- end start) (- fromend fromstart))))
 	  (incf fromstart copied)
+	  (incf (inflate-passed-to-user p) copied)
 	  (if* (>= fromstart fromend)
 	     then ; the buffer's all used up
 		  (setf (cached-buffs p) (cdr cbs))
@@ -949,6 +1018,7 @@ into the inflate buffer.
 		       :start2 i-start
 		       :end2   i-end)
 	      (let ((copied (min (- end start) (- i-end i-start))))
+		(incf (inflate-passed-to-user p) copied)
 		(setf (inflate-buffer-start p) (+ i-start copied))
 		(return-from device-read copied)))
       
@@ -957,14 +1027,18 @@ into the inflate buffer.
 	 then ; nothing more to read
 	      (return-from device-read -1))
       
-      (let ((end (process-deflate-block 
-		  (inflate-stream-br p)
-		  #'(lambda (buffer end)
-		      (append-cache-buffer p buffer end))
-		  inflate-buffer
-		  i-end)))
+      (let* ((np p) ; close over this version
+	     (end (process-deflate-block 
+		   (inflate-stream-br p)
+		   #'(lambda (buffer end)
+		       (incf (inflate-inflated-bytes np) end)
+		       (append-cache-buffer np buffer end))
+		   inflate-buffer
+		   i-end)))
 	(if* (null end)
 	   then ; no more data
+		(excl::record-stream-advance-to-eof 
+		 (slot-value p 'excl::input-handle))
 		(setf (inflate-stream-eof p) t)
 		(setf (inflate-buffer-end p) 0)
 	   else (setf (inflate-buffer-end p) end))
@@ -973,12 +1047,16 @@ into the inflate buffer.
 	))))
 
 
+(without-package-locks
+ (defmethod excl::inner-stream ((p inflate-stream))
+  (slot-value p 'excl::input-handle)))
 	
 (defun append-cache-buffer (p buffer end)
   ;; add data from this buffer to the saved buffer list 
   ;; and set the start back to 0 since this is only called 
   ;; at the end of the buffer or when we're writing out the last block
   (let ((size (- end (inflate-buffer-start p))))
+    (incf (inflate-inflated-bytes p)) ; record that we've captured these
     (if* (> size 0)
        then (let ((newbuf (make-array size :element-type '(unsigned-byte 8))))
 	      (replace newbuf buffer
@@ -993,7 +1071,12 @@ into the inflate buffer.
     (setf (inflate-buffer-start p) 0)))
 
 
-	      
+(without-package-locks
+ (defmethod excl::record-stream-advance-to-eof ((any t))
+   ;; if the stream is composed of records ending in a pseudo eof
+   ;; then read up to an eof
+   ;; (e.g. an unchunking stream is such a stream)
+   any))
 	      
 #+ignore
 (defun teststr ()
@@ -1019,6 +1102,38 @@ into the inflate buffer.
     (with-open-file (p "foo.n.gz")
       (skip-gzip-header p)
       (let ((comp (make-instance 'inflate-stream :input-handle p)))
+	(with-open-file (of filename)
+	  (loop
+	    (let ((compbyte (read-byte comp nil nil))
+		  (normbyte (read-byte of   nil nil)))
+	      (if* compbyte
+		 then (incf count))
+	  
+	      (if* (not (eq compbyte normbyte))
+		 then (format t "byte: ~d: comp: ~s,  norm: ~s~%" 
+			      count
+			      compbyte normbyte))
+	      (if* (or (null compbyte) (null normbyte))
+		 then (return))))
+	  (format t "~d bytes processed~%" count))))))
+
+#+ignore
+(defun test-str-file-2 (filename)
+  ;; this compresses the contents of the given file into
+  ;; a temporary filename and then compares the result
+  ;; of decoding that compressed file using our inflate stream
+  ;; against the actual contents of the file.
+  ;;
+  ;; this differs from test-str-file in that we do the gzip
+  ;; header skipping in the call to make-instance
+  ;;
+  (let ((count 0))
+    (run-shell-command 
+     (format nil "gzip -c ~a > foo.n.gz" filename))
+    (with-open-file (p "foo.n.gz")
+      (let ((comp (make-instance 'inflate-stream :input-handle p
+				 :skip-gzip-header t
+				 )))
 	(with-open-file (of filename)
 	  (loop
 	    (let ((compbyte (read-byte comp nil nil))
