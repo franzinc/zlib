@@ -60,6 +60,8 @@
 
 (defvar *zlib-dll-loaded* nil)
 
+(eval-when (compile load eval) (require :util-string))
+
     
 (if* (not *zlib-dll-loaded*)
    then (handler-case
@@ -491,33 +493,6 @@ condition: ~a~%" c)))
 		    
 
 
-;;;;;;;;; test code
-
-(defun deflate-file (input-filename output-filename)
-  (with-open-file (in input-filename :direction :input)
-    (with-open-file (out output-filename 
-		     :direction :output
-		     :if-exists :supersede)
-      (let ((buffer (make-array 4096 :element-type '(unsigned-byte 8)))
-	    (deflate (make-instance 'deflate-stream 
-		       :target out
-		       :compression :gzip)))
-	(loop
-	  (let ((bytes (read-vector buffer in)))
-	    
-	    (if* (zerop bytes) then (return))
-	    
-	    (let ((pos 0))
-	      
-	      (loop
-		(setq pos (write-vector buffer deflate :start pos :end bytes))
-		(if* (>= pos bytes) then (return)))
-	      )))
-	
-	; finish compression
-	(close deflate)))))
-
-	      
 
 ;; we'll resource the buffers we need to speed up allocation
 
