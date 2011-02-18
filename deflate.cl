@@ -1,3 +1,9 @@
+#+(version= 8 2)
+(sys:defpatch "deflate" 0
+  "v1: new deflate-stream."
+  :type :system
+  :post-loadable t)
+
 ;; stream for doing compression
 ;;
 ;; code based on zlib.cl from AllegroGraph written by marijnh

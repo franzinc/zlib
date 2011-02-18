@@ -1,3 +1,9 @@
+#+(version= 8 2)
+(sys:defpatch "inflate" 1
+  "v1: improved inflate-stream."
+  :type :system
+  :post-loadable t)
+
 ;; -*- mode: common-lisp; package: util.zip -*-
 ;;
 ;; inflate.cl
