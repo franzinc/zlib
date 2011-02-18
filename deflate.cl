@@ -68,10 +68,10 @@
 	 (load (util.string:string+ "libz." sys::*dll-type*) :foreign t)
 	 (error (c)
 		(error "~
-This module require the compression library named libz (on Linix) be present ~
-on the machine for the deflate module to load. ~
-See http://zlib.net/ for versions for various platforms.~% failure ~
-condition: ~a~%" c)))
+This Allegro CL module requires the compression library named libz ~
+to be present for the deflate module to load properly.  ~
+see http://zlib.net/ for versions for various platforms.
+ actual error: ~a" c)))
 	(setq *zlib-dll-loaded* t))
 
 
