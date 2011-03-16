@@ -1,6 +1,7 @@
 #+(version= 8 2)
-(sys:defpatch "deflate" 0
-  "v1: new deflate-stream."
+(sys:defpatch "deflate" 1
+  "v0: new deflate-stream;
+v1: load zlib.so.1 instead of zlib.so."
   :type :system
   :post-loadable t)
 
@@ -71,7 +72,7 @@
     
 (if* (not *zlib-dll-loaded*)
    then (handler-case
-	 (load (util.string:string+ "libz." sys::*dll-type*) :foreign t)
+	 (load (util.string:string+ "libz." sys::*dll-type* ".1") :foreign t)
 	 (error (c)
 		(error "~
 This Allegro CL module requires the compression library named libz ~
