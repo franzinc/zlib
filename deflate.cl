@@ -65,20 +65,29 @@ v1: load zlib.so.1 instead of zlib.so."
 ;;  (deflate-stream-vector-combined str)
 ;;
 
-(defvar *zlib-dll-loaded* nil)
-
 (eval-when (compile load eval) (require :util-string))
 
-    
-(if* (not *zlib-dll-loaded*)
-   then (handler-case
-	 (load (util.string:string+ "libz." sys::*dll-type* ".1") :foreign t)
-	 (error (c)
-		(error "~
+(excl:without-package-locks
+(defvar sys::*zlib-system-library*
+    (excl::machine-case :host
+      ((:msx86 :msx86-64)
+       ;; I don't know of a source for a 64-bit version of this library,
+       ;; but it would be called this if there were one.
+       "zlib1.dll")
+      ((:macosx86 :macosx86-64) "libz.1.dylib")
+      (:freebsd "libz.so.5")
+      (t (util.string:string+ "libz." sys::*dll-type* ".1"))))
+)
+
+(defvar *zlib-dll-loaded* nil)
+(when (not *zlib-dll-loaded*)
+  (handler-case (load sys::*zlib-system-library* :system-library t :foreign t)
+    (error (c)
+      (error "~
 This Allegro CL module requires the compression library named libz ~
 to be present for the deflate module to load properly.  ~
-see http://zlib.net/ for versions for various platforms.
- actual error: ~a" c)))
+See http://zlib.net for versions for various platforms.  The ~
+actual error:~%  ~a" c)))
 	(setq *zlib-dll-loaded* t))
 
 
