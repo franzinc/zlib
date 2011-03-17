@@ -7,13 +7,17 @@ on_windows = $(shell if test -d "c:/"; then echo yes; else echo no; fi)
 
 use_dcl = $(shell if test -f ../dcl.dxl; then echo yes; else echo no; fi)
 
+ifeq ($(on_windows),yes)
+plus_args = +M +B +cn
+endif
+
 ifeq ($(use_dcl),yes)
-mlisp = ../lisp -I dcl.dxl
+mlisp = ../lisp $(plus_args) -I dcl.dxl
 endif
 
 ifndef mlisp
 ifeq ($(on_windows),yes)
-mlisp = "/cygdrive/c/acl82/mlisp.exe" +B +cn
+mlisp = "/cygdrive/c/acl82/mlisp.exe" $(plus_args) 
 else
 mlisp = /fi/cl/8.2/bin/mlisp
 endif
