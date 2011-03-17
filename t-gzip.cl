@@ -47,23 +47,28 @@
 (defun deflate-test (input-filename)
   ;; compress input-file to temp-file1, uncompress it back to temp-file2
   ;; and compare temp-file2 to input-filename, error if not same.
-  (let (temp-file1 temp-file2)
-    (unwind-protect
-	(progn
-	  (setq temp-file1 (sys:make-temp-file-name "deflate1x"))
-	  (setq temp-file2 (sys:make-temp-file-name "deflate2x"))
-	  (format t "; compress test on ~a~%"
-		  (enough-namestring input-filename))
-	  (deflate-file input-filename temp-file1)
-	  ;;(format t "; uncompress ~a to ~a~%" temp-file1 temp-file2)
-	  (or (eql 0 (run-shell-command
-		      (format nil "gunzip -d < ~a > ~a"
-			      temp-file1 temp-file2)))
-	      (error "gunzip failed on ~a" temp-file1))
-	  ;;(format t "; compare ~a to ~a~%" input-filename temp-file2)
-	  (test-t (excl::compare-files input-filename temp-file2)))
-      (when temp-file1 (ignore-errors (delete-file temp-file1)))
-      (when temp-file2 (ignore-errors (delete-file temp-file2))))))
+  (flet ((cygwin-namestring (p)
+	   #+mswindows (substitute #\/ #\\ (namestring p))
+	   #-mswindows p))
+    (let (temp-file1 temp-file2)
+      (unwind-protect
+	  (progn
+	    (setq temp-file1 (sys:make-temp-file-name "deflate1x"))
+	    (setq temp-file2 (sys:make-temp-file-name "deflate2x"))
+	    (format t "; compress test on ~a~%"
+		    (enough-namestring input-filename))
+	    (deflate-file input-filename temp-file1)
+	    (format t "; uncompress ~a to ~a~%" temp-file1 temp-file2)
+	    (or (eql 0 (run-shell-command
+			(format nil "sh -c 'gunzip -d < ~a > ~a'"
+				(cygwin-namestring temp-file1)
+				(cygwin-namestring temp-file2))
+			:show-window :hide))
+		(error "gunzip failed on ~a" temp-file1))
+	    ;;(format t "; compare ~a to ~a~%" input-filename temp-file2)
+	    (test-t (excl::compare-files input-filename temp-file2)))
+	(when temp-file1 (ignore-errors (delete-file temp-file1)))
+	(when temp-file2 (ignore-errors (delete-file temp-file2)))))))
 
 (defun test-gzip ()
   (map-over-directory (lambda (p) (deflate-test p)) "./" :recurse nil))
