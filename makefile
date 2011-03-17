@@ -26,7 +26,7 @@ test: FORCE
 	echo '(load (compile-file "deflate.cl"))' >> build.tmp
 	echo '(dribble "test.out")' >> build.tmp
 	echo '(time (load (compile-file "t-gzip.cl")))' >> build.tmp
-	echo '(exit util.test::*test-errors*)' >> build.tmp
+	echo '(exit (+ test::.total-errors. test::*test-unexpected-failures* util.test::*test-errors*))' >> build.tmp
 # -batch must come before -L, since arguments are evaluated from left to right
 	$(mlisp) -batch -L build.tmp -kill
 
