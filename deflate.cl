@@ -1,7 +1,8 @@
 #+(version= 8 2)
-(sys:defpatch "deflate" 1
+(sys:defpatch "deflate" 2
   "v0: new deflate-stream;
-v1: load zlib.so.1 instead of zlib.so."
+v1: load zlib.so.1 instead of zlib.so;
+v2: fix memory leak."
   :type :system
   :post-loadable t)
 
