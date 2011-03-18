@@ -329,6 +329,10 @@ actual error:~%  ~a" c)))
 	      then (error "deflateInit2_ returned ~a" err)))
     z-stream))
 
+(defun finish-z-stream (z-stream)
+  ;; free C resources controlled by zlib
+  (deflate-end z-stream))
+
    
 
 (defmethod device-write ((p deflate-stream) buffer start end blocking)
@@ -477,6 +481,11 @@ actual error:~%  ~a" c)))
 	  (finish-zlib-compression p))
 
   (free-deflate-buffer-resource (zlib-static-resources p))
+
+  (let ((z-stream (zlib-z-stream p)))
+    (if* (not (zerop z-stream))
+       then (finish-z-stream  z-stream))
+    (setf (zlib-z-stream p) 0))
   
   (if* (deflate-target-stream p) 
      then (force-output (deflate-target-stream p)))
