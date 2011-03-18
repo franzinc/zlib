@@ -71,6 +71,14 @@
 	(when temp-file2 (ignore-errors (delete-file temp-file2)))))))
 
 (defun test-gzip ()
-  (map-over-directory (lambda (p) (deflate-test p)) "./" :recurse nil))
+  (map-over-directory
+   (lambda (p)
+     ;; Don't check .out files, since the output of the tests themselves
+     ;; might be going to one, and that means the files would be changing
+     ;; and the tests will fail.
+     (when (not (string-equal "out" (pathname-type p)))
+       (deflate-test p)))
+   "./"
+   :recurse nil))
 
 (when *do-test* (do-test "gzip" #'test-gzip))

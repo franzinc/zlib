@@ -75,7 +75,12 @@ v1: load zlib.so.1 instead of zlib.so."
        ;; but it would be called this if there were one.
        "zlib1.dll")
       ((:macosx86 :macosx86-64) "libz.1.dylib")
-      (:freebsd "libz.so.5")
+      (:freebsd
+       ;; FreeBSD changes the name of this library more than other
+       ;; platforms, which seem to keep it at .1, for the most part.
+       ;; This value is good for FreeBSD 6.1, but will need to change for
+       ;; later versions, no doubt.
+       "libz.so.3")
       (t (util.string:string+ "libz." sys::*dll-type* ".1"))))
 )
 
