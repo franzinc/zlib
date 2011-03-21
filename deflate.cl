@@ -76,12 +76,12 @@ v2: fix memory leak."
        ;; but it would be called this if there were one.
        "zlib1.dll")
       ((:macosx86 :macosx86-64) "libz.1.dylib")
-      (:freebsd
-       ;; FreeBSD changes the name of this library more than other
-       ;; platforms, which seem to keep it at .1, for the most part.
-       ;; This value is good for FreeBSD 6.1, but will need to change for
-       ;; later versions, no doubt.
-       "libz.so.3")
+;;;; FreeBSD changes the name of this library more than other
+;;;; platforms, which seem to keep it static between releases.
+;;;; The values here are defined per ACL version, which seems the most
+;;;; sensible way to do it.
+      #+(version= 8 2) (:freebsd "libz.so.3")
+      #+(version= 9 0) (:freebsd "libz.so.5")
       (t (util.string:string+ "libz." sys::*dll-type* ".1"))))
 )
 
