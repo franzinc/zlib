@@ -286,6 +286,9 @@ that describe the custome huffman tree are themselves huffman coded.
   ;; return a value from the current bit reader.
   ;; the count can be from 1 to 16
   ;;
+  (declare (optimize (speed 3) (safety 1))
+	   (type bit-reader br)
+	   (type (integer 0 16) count))
   
   (if* (eql count 0)
      then (return-from read-bits 0))
@@ -293,6 +296,8 @@ that describe the custome huffman tree are themselves huffman coded.
   
   (let ((last-byte (bit-reader-last-byte br))
 	(bits      (bit-reader-bits br)))
+    (declare (type (unsigned-byte 16) last-byte)
+	     (type (integer 0 8) bits))
     (loop 
       (if* (>= bits count)
 	 then ;we have enough now
@@ -301,7 +306,8 @@ that describe the custome huffman tree are themselves huffman coded.
 		      (setf (bit-reader-last-byte br)
 			(ash last-byte (- count)))
 		      (setf (bit-reader-bits br) (- bits count))
-		      (return (logand last-byte (svref *maskarray* count)))
+		      (return (logand last-byte (the (unsigned-byte 16)
+						  (svref *maskarray* count))))
 		 else ; no bits left
 		      (setf (bit-reader-bits br) 0)
 		      (setf (bit-reader-last-byte br) 0)
@@ -314,7 +320,7 @@ that describe the custome huffman tree are themselves huffman coded.
 		   then (error "end of file on bit reader"))
 	      
 		(let ((new-byte (read-byte (bit-reader-stream br))))
-
+		  (declare (type (unsigned-byte 8) new-byte))
 		  (incf (bit-reader-bytes-read br))
 		  (if* bytes-left
 		     then (setf (bit-reader-bytes-to-read br) (1- bytes-left)))
@@ -506,7 +512,7 @@ that describe the custome huffman tree are themselves huffman coded.
   ;; If the value of the specified pos selects a specific value
   ;; and no further bits need be read to identify that value then
   ;; we return that value rather than a list of conses.
-  
+  (declare (optimize (speed 3) (safety 1)))  
   (let (zero one)
     (dolist (mm minmaxes)
       (do ((v (car mm) (1+ v)))
@@ -612,6 +618,11 @@ that describe the custome huffman tree are themselves huffman coded.
 
 (defun put-byte-in-buffer (op byte buffer end)
   ;; store the next output byte in the buffer
+  (declare (optimize (speed 3) (safety 1))
+	   (type (unsigned-byte 8) byte)
+	   (type (simple-array (unsigned-byte 8) (*)) buffer)
+	   (type (integer 0 #.(1- array-total-size-limit)) end))
+  
   (if* (>= end (length buffer))
      then (flush-buffer op buffer end)
 	  (setq end 0))
@@ -635,7 +646,7 @@ that describe the custome huffman tree are themselves huffman coded.
   ;;
   (process-huffman-block br op *fixed-huffman-tree* 7 *fixed-huffman-distance-tree* 5
 			 buffer end))
-
+;; non-inline call to mod
 (defun process-huffman-block (br op 
 			      lengthlit-tree minwidth 
 			      distance-tree mindistwidth
@@ -646,14 +657,20 @@ that describe the custome huffman tree are themselves huffman coded.
   ;; If the distance tree is nil then we use the trivial huffman 
   ;; code from the algorithm.
   ;;
+  (declare (optimize (speed 3) (safety 1))
+	   (type (simple-array (unsigned-byte 8) (*)) buffer)
+	   (type (integer 0 #.array-total-size-limit) end))
+  
   (let* ((bufflen (length buffer))
 	 length
 	 distance
 	 )
-    
+    (declare (type (unsigned-byte 16) distance)
+	     (type (integer 0 258) length))
 		 
     (loop
       (let ((value (decode-huffman-tree br lengthlit-tree minwidth)))
+	(declare (type (integer 0 287) value))
 	(if* (< value 256)
 	   then ; output and add to buffer
 		(setq end (put-byte-in-buffer op value buffer end))
@@ -664,9 +681,11 @@ that describe the custome huffman tree are themselves huffman coded.
 		; compute length, distance
 		  
 		(let ((adj-code (- value 257)))
-		  (setq length (+ (svref *base-length* adj-code)
-				  (read-bits br (svref *length-extra-bits*
-						       adj-code)))))
+		  (setq length (+ (the (integer 0 258)
+				    (svref *base-length* adj-code))
+				  (the (unsigned-byte 16)
+				    (read-bits br (svref *length-extra-bits*
+							 adj-code))))))
 		
 		(let ((dist-code (if* distance-tree
 				    then (decode-huffman-tree br
@@ -674,14 +693,17 @@ that describe the custome huffman tree are themselves huffman coded.
 							      mindistwidth)
 				    else (read-bits br 5))))
 		  (setq distance 
-		    (+ (svref *base-distance* dist-code)
-		       (read-bits br (svref *distance-extra-bits*
-					    dist-code)))))
+		    (+ (the (unsigned-byte 16) (svref *base-distance* dist-code))
+		       (the (unsigned-byte 16)
+			 (read-bits br (svref *distance-extra-bits*
+					      dist-code))))))
 		  
 		; copy in bytes
 		(do ((i (mod (- end distance) bufflen) (1+ i))
 		     (count length (1- count)))
 		    ((<= count 0))
+		  (declare (type (integer 0 #.(1- array-total-size-limit)) i)
+			   (type (integer 0 258) count))
 		  (if* (>= i bufflen) then (setf i 0))
 		  (setq end (put-byte-in-buffer op
 						(aref buffer i)
@@ -780,8 +802,13 @@ that describe the custome huffman tree are themselves huffman coded.
   ; the minimum length of a huffman code is minbits so 
   ; grab that many bits right away to speed processing and the
   ; go bit by bit until the answer is found
+  (declare (optimize (speed 3) (safety 1))
+	   (type (integer 0 16) minbits))
+  
   (let ((startval (read-bits br minbits)))
+    (declare (type (unsigned-byte 16) startval))
     (dotimes (i minbits)
+      (declare (type (integer 0 16) i))
       (if* (logtest 1 startval)
 	 then (setq tree (cdr tree))
 	 else (setq tree (car tree)))
@@ -974,7 +1001,7 @@ into the inflate buffer.
 
 
 (defmethod device-read ((p inflate-stream) buffer start end blocking)
-  (declare (ignore blocking)) ; we only read from file streams
+  (declare (ignore blocking))		; we only read from file streams
   
   (if* (null buffer) then (setq buffer (slot-value p 'excl::buffer)))
   
@@ -1000,7 +1027,7 @@ into the inflate buffer.
 		 :end2 fromend)
 	(let ((copied (min (- end start) (- fromend fromstart))))
 	  (incf fromstart copied)
-	  (incf (inflate-passed-to-user p) copied)
+	  (incf (the fixnum (inflate-passed-to-user p)) copied)
 	  (if* (>= fromstart fromend)
 	     then ; the buffer's all used up
 		  (setf (cached-buffs p) (cdr cbs))
@@ -1023,7 +1050,7 @@ into the inflate buffer.
 		       :start2 i-start
 		       :end2   i-end)
 	      (let ((copied (min (- end start) (- i-end i-start))))
-		(incf (inflate-passed-to-user p) copied)
+		(incf (the fixnum (inflate-passed-to-user p)) copied)
 		(setf (inflate-buffer-start p) (+ i-start copied))
 		(return-from device-read copied)))
       
