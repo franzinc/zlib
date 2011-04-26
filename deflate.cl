@@ -81,7 +81,7 @@ v2: fix memory leak."
 ;;;; The values here are defined per ACL version, which seems the most
 ;;;; sensible way to do it.
       #+(version= 8 2) (:freebsd "libz.so.3")
-      #+(version= 9 0) (:freebsd "libz.so.5")
+      #+(version= 9 0) ((:freebsd :ipp3) "libz.so.5")
       (t (util.string:string+ "libz." sys::*dll-type* ".1"))))
 )
 
