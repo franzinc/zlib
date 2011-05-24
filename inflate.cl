@@ -828,8 +828,7 @@ that describe the custome huffman tree are themselves huffman coded.
 ;;  (make-instance 'inflate-stream :input-handle p :skip-gzip-header t)
 ;;  and the header will be skipped (if present)
 ;; 
-;;  closing the inflate-stream will not close stream p. that must
-;;  be done separately.
+;;  closing the inflate-stream will close stream p.
 ;;
 
 ;;  how the inflate-stream works:
