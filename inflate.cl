@@ -1042,8 +1042,7 @@ into the inflate buffer.
 		   i-end)))
 	(if* (null end)
 	   then ; no more data
-		(excl::record-stream-advance-to-eof 
-		 (slot-value p 'excl::input-handle))
+                (excl::record-stream-advance-to-eof p)
 		(setf (inflate-stream-eof p) t)
 		(setf (inflate-buffer-end p) 0)
 	   else (setf (inflate-buffer-end p) end))
@@ -1077,11 +1076,13 @@ into the inflate buffer.
 
 
 (without-package-locks
- (defmethod excl::record-stream-advance-to-eof ((any t))
-   ;; if the stream is composed of records ending in a pseudo eof
-   ;; then read up to an eof
-   ;; (e.g. an unchunking stream is such a stream)
-   any))
+  (defmethod excl::record-stream-advance-to-eof ((any t))
+    any)
+  (defmethod excl::record-stream-advance-to-eof ((p inflate-stream))
+    (let ((inner-handle (slot-value p 'excl::input-handle)))
+      ;; skip the gzip trailer
+      (loop repeat 8 do (read-byte inner-handle))
+      (excl::record-stream-advance-to-eof inner-handle))))
 	      
 #+ignore
 (defun teststr ()
