@@ -1,6 +1,7 @@
 #+(version= 8 2)
-(sys:defpatch "inflate" 1
-  "v1: improved inflate-stream."
+(sys:defpatch "inflate" 2
+  "v1: improved inflate-stream;
+v2: performance improvements."
   :type :system
   :post-loadable t)
 
@@ -29,9 +30,6 @@
 ;; version) or write to the Free Software Foundation, Inc., 59 Temple Place, 
 ;; Suite 330, Boston, MA  02111-1307  USA
 ;;
-;;
-;; $Id: inflate.cl,v 2.6 2008/12/15 19:55:27 duane Exp $
-
 ;; Description:
 ;;   inflate a stream of bytes which was compressed with the Deflate
 ;;   algorithm
