@@ -1,7 +1,8 @@
 #+(version= 8 2)
-(sys:defpatch "inflate" 2
+(sys:defpatch "inflate" 3
   "v1: improved inflate-stream;
-v2: performance improvements."
+v2: performance improvements.
+v3: Fix bug in v2 patch that always expected a gzip trailer."
   :type :system
   :post-loadable t)
 
@@ -124,7 +125,10 @@ that describe the custome huffman tree are themselves huffman coded.
   (:use :common-lisp :excl)
   (:export #:inflate
 	   #:inflate-stream
-	   #:skip-gzip-header))
+	   #:skip-gzip-header
+	   #:skip-gzip-trailer
+	   #:skip-zlib-header
+	   #:skip-zlib-trailer))
 
 
 (in-package :util.zip)
@@ -133,6 +137,9 @@ that describe the custome huffman tree are themselves huffman coded.
   (require :iodefs))
 
 (provide :inflate)
+;; used by aserve to create correct inflate-stream based
+;; on inflate patch installed when it was built.
+(pushnew :inflate-bug20472 *features*)
 
 (defun inflate (p op)
   ;; user callable
@@ -243,6 +250,49 @@ that describe the custome huffman tree are themselves huffman coded.
     ; success!
     bytes-read	
     ))
+
+(defun skip-gzip-trailer (p)
+  ;; There is no identifier for the gzip trailer, so
+  ;; this function should only be called immediately after
+  ;; the final block is read in the DEFLATE data-stream
+  ;; of an inflate-stream with :compression :gzip
+  (dotimes (i 8) (read-byte p))
+  8)
+
+(defun skip-zlib-header (p)
+  ;; typically a 2-byte header, unless an FDICT is present.
+  ;; first nibble should always be 8.
+  ;; second nibble should always be <= 7.
+  (let ((bytes-read 0))
+    (let* ((cmf (read-byte p))
+	   (cm (logand cmf #xF))
+	   (cinfo (ash cmf -4)))
+      (unless (and (= cm 8) (<= cinfo 7))
+	;; not a zlib header
+	(unread-char (code-char cmf) p)
+	(return-from skip-zlib-header nil))
+      (incf bytes-read)
+    
+      (let* ((flag (read-byte p))
+	     (fdict (logand flag #x20)))
+	(unless (= (mod (+ (ash cmf 8) flag) 31) 0)
+	  ;; not a zlib header
+	  (error "non zlib header detected."))
+	(incf bytes-read)
+      
+	;; check for fdist
+	(if* (> fdict 0)
+	   then ;; shouldn't occur, but just in case, skip DICTID
+		(dotimes (i 4) (read-byte p))
+		(incf bytes-read 4))))
+  
+    ;; success!
+    bytes-read))
+
+(defun skip-zlib-trailer (p)
+  ;; 4-byte adler32 value.
+  (dotimes (i 4) (read-byte p))
+  4)
 		
 ;;;----------- end gzip support
 
@@ -845,13 +895,30 @@ that describe the custome huffman tree are themselves huffman coded.
 ;; external interface
 ;;  open a atream p to a file containing the compressed data.
 ;;
-;;  If this file may have a gzip header on it call (skip-gzip-header p)
-;;  then  (make-instance 'inflate-stream :input-handle p)
+;; The :compression argument is optional.  It can be :gzip,
+;;   :zlib, :deflate, or a list containing two function-specs.
+;;   If not given :gzip is assumed. If nil is specified, it is
+;;   equivalent to the :deflate method.
+;; 
+;;  if the :compression argument is one of the allowed symbols, 
+;;  the inflate-stream will automatically attempt to skip over
+;;  the header and trailer associated with that type.
+;; 
+;;  if the :compression argument is a list, then the first function
+;;  will be called with the inflate-streams input-handle, in order
+;;  to read past the header. When the final deflate block was been read
+;;  from the stream, it will then call the second function to read
+;;  past the trailer.
+;; 
+;;  If this file may have a gzip header on it, then
+;;  (make-instance 'inflate-stream :compression :gzip)
 ;;  will return a stream which can be read to recover the uncompressed data
 ;; 
-;;  You can also just just call 
-;;  (make-instance 'inflate-stream :input-handle p :skip-gzip-header t)
-;;  and the header will be skipped (if present)
+;;  If you wanted to actually see the contents of the header and trailer
+;;  you could install your own custom readers by
+;;  (make-instance 'inflate-stream :input-handle p
+;;                 :compression '(my-header-reader my-trailer-reader))
+;;  and these routines will be called with 'p' at the appropriate times.
 ;; 
 ;;  closing the inflate-stream will close stream p.
 ;;
@@ -930,6 +997,8 @@ into the inflate buffer.
     :accessor inflate-passed-to-user)
    
    (at-eof :initform nil :accessor inflate-stream-eof) ; true when read no more
+   
+   (compression :initarg :compression :initform :gzip :accessor inflate-compression-type)
   ))
 
 
@@ -937,7 +1006,8 @@ into the inflate buffer.
 
 (defmethod device-open ((p inflate-stream) dummy options)
   (declare (ignore dummy))
-  (let ((input-handle (getf options :input-handle)))
+  (let ((input-handle (getf options :input-handle))
+	(compression (or (getf options :compression) :gzip)))
     (if* (null input-handle)
        then (error ":input-handle value must be specified on stream creation"))
     
@@ -946,6 +1016,18 @@ into the inflate buffer.
     
     (install-single-channel-character-strategy
      p (stream-external-format input-handle) nil)
+
+    ;; remain silent on the deprecation notice to maintain backward
+    ;; compatibility w/ older versions of the patch in how they
+    ;; interact with aserve compression.
+    #+ignore
+    (if* (not (eq (getf options :skip-gzip-header :absent) :absent))
+       then (warn ":skip-gzip-header has been deprecated. Use :compression to effect handling of headers and trailers."))
+
+    (unless (or (member compression '(:gzip :zlib :deflate))
+		(and (consp compression) (= (length compression) 2))
+		(null compression))
+      (error "compression must be :gzip, :zlib, :deflate, nil, or a list containing two function-specs, not ~s" compression))
     
     (setf (stream-external-format p) (stream-external-format input-handle))
     
@@ -966,11 +1048,19 @@ into the inflate buffer.
 		 
     ;; specific to the inflate stream
     (let ((initial-count 0))
-      (if* (getf options :skip-gzip-header)
-	 then (setq initial-count
-		(skip-gzip-header input-handle))
-	      )
-    
+      (setq initial-count
+	(case compression
+	  (:gzip (skip-gzip-header input-handle))
+	  (:zlib (skip-zlib-header input-handle))
+	  (:deflate 0)
+	  (t (and (car compression) (funcall (car compression) input-handle)))))
+      
+      (if* (null initial-count)
+	 then ;; problem reading header. set compression mode to :deflate
+	      ;; so we don't try to read a trailer, either.
+	      (setq initial-count 0)
+	      (setf (inflate-compression-type p) :deflate))
+
       (setf (inflate-stream-br p) (new-bit-reader input-handle
 						  :bytes-to-read 
 						  (getf options :content-length)
@@ -1104,16 +1194,24 @@ into the inflate buffer.
   (defmethod excl::record-stream-advance-to-eof ((any t))
     any)
   (defmethod excl::record-stream-advance-to-eof ((p inflate-stream))
-    (let ((inner-handle (slot-value p 'excl::input-handle)))
-      ;; skip the gzip trailer
-      (loop repeat 8 do (read-byte inner-handle))
+    (let ((inner-handle (slot-value p 'excl::input-handle))
+	  (compression (inflate-compression-type p))
+	  trailer-bytes)
+      ;; skip the trailer, if there is one
+      (setq trailer-bytes
+	(case compression
+	  (:gzip (skip-gzip-trailer inner-handle))
+	  (:zlib (skip-zlib-trailer inner-handle))
+	  (:deflate 0)
+	  (t (and (second compression) (funcall (second compression) inner-handle)))))
+      (when trailer-bytes
+	(incf (bit-reader-bytes-read (inflate-stream-br p)) trailer-bytes))
       (excl::record-stream-advance-to-eof inner-handle))))
 	      
 #+ignore
 (defun teststr ()
   ;; setup test stream on a file
   (with-open-file (p "foo.n.gz")
-    (skip-gzip-header p)
     (let ((*dec* (make-instance 'inflate-stream :input-handle p)))
       (declare (special *dec*))
       (break "foo"))))
@@ -1131,7 +1229,6 @@ into the inflate buffer.
     (run-shell-command 
      (format nil "gzip -c ~a > foo.n.gz" filename))
     (with-open-file (p "foo.n.gz")
-      (skip-gzip-header p)
       (let ((comp (make-instance 'inflate-stream :input-handle p)))
 	(with-open-file (of filename)
 	  (loop
@@ -1162,9 +1259,7 @@ into the inflate buffer.
     (run-shell-command 
      (format nil "gzip -c ~a > foo.n.gz" filename))
     (with-open-file (p "foo.n.gz")
-      (let ((comp (make-instance 'inflate-stream :input-handle p
-				 :skip-gzip-header t
-				 )))
+      (let ((comp (make-instance 'inflate-stream :input-handle p)))
 	(with-open-file (of filename)
 	  (loop
 	    (let ((compbyte (read-byte comp nil nil))

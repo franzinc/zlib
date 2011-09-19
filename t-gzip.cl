@@ -16,11 +16,12 @@
 
 (eval-when (compile load eval)
   (require :deflate)
+  (require :inflate)
   (require :test))
 
 (in-package :test)
 
-(defun deflate-file (input-filename output-filename)
+(defun deflate-file (input-filename output-filename &optional (type :gzip))
   (with-open-file (in input-filename :direction :input)
     (with-open-file (out output-filename 
 		     :direction :output
@@ -28,7 +29,7 @@
       (let ((buffer (make-array 4096 :element-type '(unsigned-byte 8)))
 	    (deflate (make-instance 'util.zip::deflate-stream 
 		       :target out
-		       :compression :gzip)))
+		       :compression type)))
 	(loop
 	  (let ((bytes (read-vector buffer in)))
 	    
@@ -44,14 +45,15 @@
 	; finish compression
 	(close deflate)))))
 
-(defun inflate-file (input-filename output-filename)
+(defun inflate-file (input-filename output-filename &optional (type :gzip))
   (with-open-file (in input-filename :direction :input)
     (with-open-file (out output-filename 
 		     :direction :output
 		     :if-exists :supersede)
+      (format t ";; Inside inflate-file~%")
       (let ((inflate (make-instance 'util.zip::inflate-stream
-		       :input-handle in
-		       :skip-gzip-header t))
+		       :compression type
+		       :input-handle in))
 	    byte)
 	(while (setq byte (read-byte inflate nil nil))
 	  (write-byte byte out))))))
@@ -108,6 +110,38 @@
 	(when temp-file1 (ignore-errors (delete-file temp-file1)))
 	(when temp-file2 (ignore-errors (delete-file temp-file2)))))))
 
+
+(defun full-test (input-filename type &optional inflate-type)
+  ;; compress input-file to temp-file1, uncompress it back to temp-file2
+  ;; and compare temp-file2 to input-filename, error if not same.
+  (unless inflate-type
+    (setq inflate-type type))
+  (let (temp-file1 temp-file2)
+    (unwind-protect
+	(progn
+	  (setq temp-file1 (sys:make-temp-file-name "full1"))
+	  (setq temp-file2 (sys:make-temp-file-name "full2"))
+	  (format t "; full test on ~a type ~s ~s~%"
+		  (enough-namestring input-filename) type inflate-type)
+	  (format t "  ; deflate ~a to ~a~%" temp-file1 temp-file2)
+	  (deflate-file input-filename temp-file1 type)
+	  (format t "  ; inflate ~a to ~a~%" temp-file1 temp-file2)
+	  (inflate-file temp-file1 temp-file2 inflate-type)
+	  ;;(format t "; compare ~a to ~a~%" input-filename temp-file2)
+	  (test-t (excl::compare-files input-filename temp-file2)))
+      (when temp-file1 (ignore-errors (delete-file temp-file1)))
+      (when temp-file2 (ignore-errors (delete-file temp-file2))))))
+
+;; skip the 2-byte zlib header
+(defun custom-zlib-head (p)
+  (read-byte p) (read-byte p)
+  2)
+
+;; skip the 4-byte zlib trailer
+(defun custom-zlib-tail (p)
+  (dotimes (i 4) (read-byte p))
+  4)
+
 (defun test-gzip ()
   (map-over-directory
    (lambda (p)
@@ -116,7 +150,12 @@
      ;; and the tests will fail.
      (when (not (string-equal "out" (pathname-type p)))
        (deflate-test p)
-       (inflate-test p)))
+       (inflate-test p)
+       (dolist (type '(:gzip :zlib :deflate nil))
+	 (full-test p type))
+       ;; test custom compression type.
+       (full-test p :zlib '(custom-zlib-head custom-zlib-tail))
+       ))
    "./"
    :recurse nil))
 

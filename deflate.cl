@@ -37,8 +37,8 @@ v2: fix memory leak."
 ;;
 ;; The target argument is required. It says where to compressed
 ;; data.
-;; The :compression argument is optional.  It can be :gzip or
-;;   deflate.  If not given :gzip is assumed
+;; The :compression argument is optional.  It can be :gzip,
+;;   :zlib, or :deflate.  If not given :gzip is assumed
 ;;
 ;; If a stream is given as the :target then the compressed bytes 
 ;; are written to that stream as they are generated.
@@ -265,8 +265,8 @@ actual error:~%  ~a" c)))
 	 (setf (zlib-target-vector p) output-target))
 	(t (error "the value of initarg :target must be a stream or simple (unsigned-byte 8) vector, not ~s" output-target)))
     
-      (if* (not (member compression '(:gzip :deflate)))
-	 then (error "compression must be :gzip or :deflate, not ~s"
+      (if* (not (member compression '(:gzip :zlib :deflate)))
+	 then (error "compression must be :gzip, :zlib, or :deflate, not ~s"
 		     compression))
       
       (if* (null output-target)
@@ -313,8 +313,10 @@ actual error:~%  ~a" c)))
 
 (defun make-z-stream (z-stream type)
   (let (
-	;; windowBits default value is 15, if you add 16 you get bzip header and footer
-        (window-bits (+ 15 (ecase type (:gzip 16) (:deflate 0)))))
+	;; windowBits default value is 15 for zlib header and trailer
+	;; if you add 16 you get gzip header and trailer
+	;; if windowBits is -15, then you get a raw deflate stream.
+        (window-bits (+ 15 (ecase type (:gzip 16) (:zlib 0) (:deflate -30)))))
     (setf (z-stream-slot zalloc z-stream) 0
           (z-stream-slot zfree z-stream) 0
           (z-stream-slot opaque z-stream) 0)
