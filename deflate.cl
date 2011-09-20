@@ -1,8 +1,9 @@
 #+(version= 8 2)
-(sys:defpatch "deflate" 2
+(sys:defpatch "deflate" 3
   "v0: new deflate-stream;
 v1: load zlib.so.1 instead of zlib.so;
-v2: fix memory leak."
+v2: fix memory leak.
+v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
   :type :system
   :post-loadable t)
 
