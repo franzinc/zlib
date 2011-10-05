@@ -145,10 +145,10 @@
 (defun test-gzip ()
   (map-over-directory
    (lambda (p)
-     ;; Don't check .out files, since the output of the tests themselves
-     ;; might be going to one, and that means the files would be changing
-     ;; and the tests will fail.
-     (when (not (string-equal "out" (pathname-type p)))
+     ;; Only check .cl files. This test file may be run in 
+     ;; a directory with many large files resulting in
+     ;; the test taking a _very_ long time.
+     (when (string-equal "cl" (pathname-type p))
        (deflate-test p)
        (inflate-test p)
        (dolist (type '(:gzip :zlib :deflate nil))
