@@ -484,8 +484,6 @@ actual error:~%  ~a" c)))
      then ; flush all current data
 	  (finish-zlib-compression p))
 
-  (free-deflate-buffer-resource (zlib-static-resources p))
-
   (let ((z-stream (zlib-z-stream p)))
     (if* (not (zerop z-stream))
        then (finish-z-stream  z-stream))
@@ -493,6 +491,11 @@ actual error:~%  ~a" c)))
   
   (if* (deflate-target-stream p) 
      then (force-output (deflate-target-stream p)))
+
+  ;; Free the Lisp resource only after all the uses of 
+  ;; the static areas are done.    [bug20559]
+  (free-deflate-buffer-resource (zlib-static-resources p))
+
   p
   )
 
