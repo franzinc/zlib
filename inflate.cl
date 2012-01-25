@@ -1,8 +1,9 @@
 #+(version= 8 2)
-(sys:defpatch "inflate" 3
+(sys:defpatch "inflate" 4
   "v1: improved inflate-stream;
 v2: performance improvements.
-v3: Fix bug in v2 patch that always expected a gzip trailer."
+v3: Fix bug in v2 patch that always expected a gzip trailer.
+v4: Fix bug in skip-*-header routines. Don't unread-char that wasn't read from inflate stream."
   :type :system
   :post-loadable t)
 
@@ -194,10 +195,21 @@ that describe the custome huffman tree are themselves huffman coded.
   (let (method flags (bytes-read 0))
     
     ; look for magic number
-    (if* (not (eql #x1f (read-byte p)))
-       then ; not a gzip header, may be a deflate block
-	    (unread-char (code-char #x1f) p)
-	    (return-from skip-gzip-header nil))
+
+    ;; unwind-protect is for bug20742. unread-char is being used until an unread-byte is
+    ;; available, so we must ensure the external-format is octet-based.
+    (let ((saved-ef (stream-external-format p))
+	  byte-read)
+      (unwind-protect
+	  (progn
+	    (setf (stream-external-format p) (load-time-value (find-external-format :latin1)))
+	    (setf byte-read (char-code (read-char p)))
+	    (if* (not (eql #x1f byte-read))
+	       then			; not a gzip header, may be a deflate block
+		    (unread-char (code-char byte-read) p)
+		    (return-from skip-gzip-header nil)))
+	(setf (stream-external-format p) saved-ef)))
+
     (incf bytes-read)
 
     ; now check the second magic number
@@ -263,31 +275,39 @@ that describe the custome huffman tree are themselves huffman coded.
   ;; typically a 2-byte header, unless an FDICT is present.
   ;; first nibble should always be 8.
   ;; second nibble should always be <= 7.
-  (let ((bytes-read 0))
-    (let* ((cmf (read-byte p))
-	   (cm (logand cmf #xF))
-	   (cinfo (ash cmf -4)))
-      (unless (and (= cm 8) (<= cinfo 7))
-	;; not a zlib header
-	(unread-char (code-char cmf) p)
-	(return-from skip-zlib-header nil))
-      (incf bytes-read)
+
+  ;; unwind-protect is for bug20742. unread-char is being used until an unread-byte is
+  ;; available, so we must ensure the external-format is octet-based.
+  (let ((bytes-read 0)
+	(saved-ef (stream-external-format p)))
+    (unwind-protect
+	(progn
+	  (setf (stream-external-format p) (load-time-value (find-external-format :latin1)))
+	  (let* ((cmf (char-code (read-char p)))
+		 (cm (logand cmf #xF))
+		 (cinfo (ash cmf -4)))
+	    (unless (and (= cm 8) (<= cinfo 7))
+	      ;; not a zlib header
+	      (unread-char (code-char cmf) p)
+	      (return-from skip-zlib-header nil))
+	    (incf bytes-read)
     
-      (let* ((flag (read-byte p))
-	     (fdict (logand flag #x20)))
-	(unless (= (mod (+ (ash cmf 8) flag) 31) 0)
-	  ;; not a zlib header
-	  (error "non zlib header detected."))
-	(incf bytes-read)
+	    (let* ((flag (read-byte p))
+		   (fdict (logand flag #x20)))
+	      (unless (= (mod (+ (ash cmf 8) flag) 31) 0)
+		;; not a zlib header
+		(error "non zlib header detected."))
+	      (incf bytes-read)
       
-	;; check for fdist
-	(if* (> fdict 0)
-	   then ;; shouldn't occur, but just in case, skip DICTID
-		(dotimes (i 4) (read-byte p))
-		(incf bytes-read 4))))
+	      ;; check for fdist
+	      (if* (> fdict 0)
+		 then ;; shouldn't occur, but just in case, skip DICTID
+		      (dotimes (i 4) (read-byte p))
+		      (incf bytes-read 4))))
   
-    ;; success!
-    bytes-read))
+	  ;; success!
+	  bytes-read)
+      (setf (stream-external-format p) saved-ef))))
 
 (defun skip-zlib-trailer (p)
   ;; 4-byte adler32 value.
