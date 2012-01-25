@@ -142,6 +142,16 @@
   (dotimes (i 4) (read-byte p))
   4)
 
+(defun test-invalid-first-byte-in-header ()
+  (let ((in-file "/dev/zero"))
+    (dolist (type '(:gzip :zlib))
+      (format t "~&Testing faulty header detection (~s)..." type)
+      (with-open-file (in in-file :direction :input)
+	(test-no-err (make-instance 'util.zip::inflate-stream
+		       :compression type
+		       :input-handle in)))
+      (format t "okay.~%"))))
+
 (defun test-gzip ()
   (map-over-directory
    (lambda (p)
@@ -157,6 +167,8 @@
        (full-test p :zlib '(custom-zlib-head custom-zlib-tail))
        ))
    "./"
-   :recurse nil))
+   :recurse nil)
+  
+  (test-invalid-first-byte-in-header))
 
 (when *do-test* (do-test "gzip" #'test-gzip))
