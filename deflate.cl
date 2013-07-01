@@ -101,6 +101,7 @@ v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
       #+(version= 8 2) (:freebsd "libz.so.3")
       #+(version= 9 0) ((:freebsd :ipp3) "libz.so.5")
       #+(version= 9 1) ((:freebsd :ipp3) "libz.so.5")
+      (:freebsd-64 "libz.so.6")
       (t (util.string:string+ "libz." sys::*dll-type* ".1"))))
 )
 
