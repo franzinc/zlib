@@ -12,7 +12,7 @@ v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
 ;; code based on zlib.cl from AllegroGraph written by marijnh
 ;; while under contract with Franz.
 
-;; copyright (c) 2012-2013 Franz Inc, Oakland, CA - All rights reserved.
+;; copyright (c) 2012-2015 Franz Inc, Oakland, CA - All rights reserved.
 ;;
 ;; The software, data and information contained herein are proprietary
 ;; to, and comprise valuable trade secrets of, Franz, Inc.  They are
