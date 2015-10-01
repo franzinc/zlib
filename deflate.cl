@@ -497,6 +497,9 @@ actual error:~%  ~a" c)))
 		
 
 
+; set to a function to call on the target stream to do 
+; extra processing on deflate close
+(defvar sys::*deflate-target-stream-close-hook* nil)
 
 (defmethod device-close ((p deflate-stream) abort)
   
@@ -510,7 +513,11 @@ actual error:~%  ~a" c)))
     (setf (zlib-z-stream p) 0))
   
   (if* (deflate-target-stream p) 
-     then (force-output (deflate-target-stream p)))
+     then (force-output (deflate-target-stream p))
+	  (and sys::*deflate-target-stream-close-hook* 
+	       (funcall sys::*deflate-target-stream-close-hook* 
+			(deflate-target-stream p)))
+	  )
 
   ;; Free the Lisp resource only after all the uses of 
   ;; the static areas are done.    [bug20559]
