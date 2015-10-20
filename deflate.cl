@@ -1,17 +1,8 @@
-#+(version= 8 2)
-(sys:defpatch "deflate" 3
-  "v0: new deflate-stream;
-v1: load zlib.so.1 instead of zlib.so;
-v2: fix memory leak.
-v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
-  :type :system
-  :post-loadable t)
-
 ;; stream for doing compression
 ;;
 ;; code based on zlib.cl from AllegroGraph written by marijnh
 ;; while under contract with Franz.
-
+;;
 ;; copyright (c) 2012-2015 Franz Inc, Oakland, CA - All rights reserved.
 ;;
 ;; The software, data and information contained herein are proprietary
@@ -27,6 +18,28 @@ v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
 ;; Government are subject to restrictions of Restricted Rights for
 ;; Commercial Software developed at private expense as specified in
 ;; DOD FAR Supplement 52.227-7013 (c) (1) (ii), as applicable.
+
+#+(version= 10 0)
+(sys:defpatch "deflate" 1
+  "v1: add hook run when a deflate stream closes."
+  :type :system
+  :post-loadable t)
+
+#+(version= 9 0)
+(sys:defpatch "deflate" 1
+  "v1: add hook run when a deflate stream closes."
+  :type :system
+  :post-loadable t)
+
+#+(version= 8 2)
+(sys:defpatch "deflate" 4
+  "v4: add hook run when a deflate stream closes;
+v0: new deflate-stream;
+v1: load zlib.so.1 instead of zlib.so;
+v2: fix memory leak.
+v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
+  :type :system
+  :post-loadable t)
 
 (defpackage :util.zip
   (:use :common-lisp :excl)
