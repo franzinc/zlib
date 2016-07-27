@@ -1,36 +1,7 @@
-#+(version= 8 2)
-(sys:defpatch "inflate" 4
-  "v1: improved inflate-stream;
-v2: performance improvements.
-v3: Fix bug in v2 patch that always expected a gzip trailer.
-v4: Fix bug in skip-*-header routines. Don't unread-char that wasn't read from inflate stream."
-  :type :system
-  :post-loadable t)
-
 ;; -*- mode: common-lisp; package: util.zip -*-
-;;
 ;; inflate.cl
 ;;
-;; copyright (c) 1986-2005 Franz Inc, Berkeley, CA  - All rights reserved.
-;; copyright (c) 2000-2016 Franz Inc, Oakland, CA - All rights reserved.
-;;
-;; This code is free software; you can redistribute it and/or
-;; modify it under the terms of the version 2.1 of
-;; the GNU Lesser General Public License as published by 
-;; the Free Software Foundation, as clarified by the AllegroServe
-;; prequel found in license-allegroserve.txt.
-;;
-;; This code is distributed in the hope that it will be useful,
-;; but without any warranty; without even the implied warranty of
-;; merchantability or fitness for a particular purpose.  See the GNU
-;; Lesser General Public License for more details.
-;;
-;; Version 2.1 of the GNU Lesser General Public License is in the file 
-;; license-lgpl.txt that was distributed with this file.
-;; If it is not present, you can access it from
-;; http://www.gnu.org/copyleft/lesser.txt (until superseded by a newer
-;; version) or write to the Free Software Foundation, Inc., 59 Temple Place, 
-;; Suite 330, Boston, MA  02111-1307  USA
+;; See the file LICENSE for the full license governing this code.
 ;;
 ;; Description:
 ;;   inflate a stream of bytes which was compressed with the Deflate
@@ -42,7 +13,14 @@ v4: Fix bug in skip-*-header routines. Don't unread-char that wasn't read from i
 ;;- http://www.franz.com/~jkf/coding_standards.html
 ;;-
 
-
+#+(version= 8 2)
+(sys:defpatch "inflate" 4
+  "v1: improved inflate-stream;
+v2: performance improvements.
+v3: Fix bug in v2 patch that always expected a gzip trailer.
+v4: Fix bug in skip-*-header routines. Don't unread-char that wasn't read from inflate stream."
+  :type :system
+  :post-loadable t)
 
 #|
 Programming interface:
