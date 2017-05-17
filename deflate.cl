@@ -5,34 +5,37 @@
 ;;
 ;; See the file LICENSE for the full license governing this code.
 
-#+(version= 10 0)
+#+(version= 10 1)
 (sys:defpatch "deflate" 1
-  "v1: add hook run when a deflate stream closes."
+  "v1: internal change for aserve."
+  :type :system
+  :post-loadable t)
+
+#+(version= 10 0)
+(sys:defpatch "deflate" 2
+  "v2: internal change for aserve;
+v1: add hook run when a deflate stream closes."
   :type :system
   :post-loadable t)
 
 #+(version= 9 0)
-(sys:defpatch "deflate" 1
-  "v1: add hook run when a deflate stream closes."
+(sys:defpatch "deflate" 2
+  "v2: internal change for aserve;
+v1: add hook run when a deflate stream closes."
   :type :system
   :post-loadable t)
 
-#+(version= 8 2)
-(sys:defpatch "deflate" 4
-  "v4: add hook run when a deflate stream closes;
-v0: new deflate-stream;
-v1: load zlib.so.1 instead of zlib.so;
-v2: fix memory leak.
-v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
-  :type :system
-  :post-loadable t)
 
 (defpackage :util.zip
   (:use :common-lisp :excl)
-  (:export #:deflate-stream
-	   #:deflate-target-stream
-	   #:deflate-stream-vector
-	   #:deflate-stream-vector-combined))
+  (:export
+   ;; NOTE: this stream class is defined even when the foreign loading
+   ;;       below fails.  Applications that use this module should check
+   ;;       that :zlib-deflate is on *features* before using this class.
+   #:deflate-stream
+   #:deflate-target-stream
+   #:deflate-stream-vector
+   #:deflate-stream-vector-combined))
 
 (in-package :util.zip)
 
@@ -82,6 +85,90 @@ v3: Add support for creating :gzip, :zlib, or raw :deflates streams."
 ;;  (close str)
 ;;  (deflate-stream-vector-combined str)
 ;;
+
+;; See `NOTE' in export about the availability of this class when requiring
+;; this module.
+(def-stream-class deflate-stream (single-channel-simple-stream)
+  ((z-state
+    ;; malloc z-state foreign object
+    ;; holding the info zlib needs to use to run
+    :initform 0
+    :accessor z-state)
+   
+   ; using existing slots
+   ; from stream
+   ;  flags
+   ;  output-handle    - stream to vector
+   ;  external-format
+   ;
+   ; from simple-stream
+   ;   buffer    malloc,ed, contains user written data
+   ;   buffer-ptr next byte to write
+   ;   charpos    always nil since we don't track
+   ;
+   ;
+   
+   ; new slots
+
+   (z-stream
+    ;; holds malloc'ed zlib struct that controls compression
+    :initform 0
+    :accessor zlib-z-stream)
+
+   (in-buffer
+    ;; malloced buffer to which data is copied before compression
+    ;; since the compressor requires a static buffer
+    :accessor zlib-in-buffer)
+   
+   
+   (z-buffer
+    ;; malloc buffer holding data after compression
+    ;; it's malloced so it stays still
+    
+    :initform 0
+    :accessor zlib-z-buffer)
+   
+   
+   (in-buffer-ptr  :initform 0
+		   :accessor zlib-in-buffer-ptr)
+   
+
+   ; points to the lispstatic-reclaimable resources for
+   ; this stream. Should the stream be dropped and never
+   ; closed this list will be gc'ed and that will the
+   ; allow the static data to be reclaimed.
+   (static-resources :initform nil
+		     :accessor zlib-static-resources)
+   
+   ; trace usage
+   (in-bytes :initform 0
+	     :accessor zlib-in-bytes)
+   
+   (out-bytes :initform 0
+	      :accessor zlib-out-bytes)
+   
+   
+   ;; for stream target
+   (target-stream  
+    :initform nil
+    :accessor deflate-target-stream)
+    
+    ;; for vector target
+   (target-vector 
+    :initform nil
+    :accessor zlib-target-vector)
+   
+   (target-vector-pos
+    :initform 0
+    :accessor zlib-target-vector-pos)
+   
+   (target-vector-old
+    ; list of full previous target vectors
+    :initform nil
+    :accessor zlib-target-vector-old)
+   
+   ;; end vector target
+   ))
 
 (eval-when (compile load eval) (require :util-string))
 
@@ -172,92 +259,6 @@ actual error:~%  ~a" c)))
 (ff:def-foreign-call (deflate-end "deflateEnd")
     ((stream (* z-stream)))
   :returning :int)
-
-
-(def-stream-class deflate-stream (single-channel-simple-stream)
-  ((z-state
-    ;; malloc z-state foreign object
-    ;; holding the info zlib needs to use to run
-    :initform 0
-    :accessor z-state)
-   
-   ; using existing slots
-   ; from stream
-   ;  flags
-   ;  output-handle    - stream to vector
-   ;  external-format
-   ;
-   ; from simple-stream
-   ;   buffer    malloc,ed, contains user written data
-   ;   buffer-ptr next byte to write
-   ;   charpos    always nil since we don't track
-   ;
-   ;
-   
-   ; new slots
-
-   (z-stream
-    ;; holds malloc'ed zlib struct that controls compression
-    :initform 0
-    :accessor zlib-z-stream)
-
-   (in-buffer
-    ;; malloced buffer to which data is copied before compression
-    ;; since the compressor requires a static buffer
-    :accessor zlib-in-buffer)
-   
-   
-   (z-buffer
-    ;; malloc buffer holding data after compression
-    ;; it's malloced so it stays still
-    
-    :initform 0
-    :accessor zlib-z-buffer)
-   
-   
-   (in-buffer-ptr  :initform 0
-		   :accessor zlib-in-buffer-ptr)
-   
-
-   ; points to the lispstatic-reclaimable resources for
-   ; this stream. Should the stream be dropped and never
-   ; closed this list will be gc'ed and that will the
-   ; allow the static data to be reclaimed.
-   (static-resources :initform nil
-		     :accessor zlib-static-resources)
-   
-   ; trace usage
-   (in-bytes :initform 0
-	     :accessor zlib-in-bytes)
-   
-   (out-bytes :initform 0
-	      :accessor zlib-out-bytes)
-   
-   
-   ;; for stream target
-   (target-stream  
-    :initform nil
-    :accessor deflate-target-stream)
-    
-    ;; for vector target
-   (target-vector 
-    :initform nil
-    :accessor zlib-target-vector)
-   
-   (target-vector-pos
-    :initform 0
-    :accessor zlib-target-vector-pos)
-   
-   (target-vector-old
-    ; list of full previous target vectors
-    :initform nil
-    :accessor zlib-target-vector-old)
-   
-   ;; end vector target
-		  
-   
-   )
-   )
 
 (defmethod print-object ((p deflate-stream) s)
   (print-unreadable-object (p s :identity t :type t)
