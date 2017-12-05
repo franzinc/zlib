@@ -13,14 +13,18 @@
 ;;- http://www.franz.com/~jkf/coding_standards.html
 ;;-
 
-#+(version= 8 2)
-(sys:defpatch "inflate" 4
-  "v1: improved inflate-stream;
-v2: performance improvements.
-v3: Fix bug in v2 patch that always expected a gzip trailer.
-v4: Fix bug in skip-*-header routines. Don't unread-char that wasn't read from inflate stream."
+#+(version= 10 1)
+(sys:defpatch "inflate" 1
+  "v1: avoid eof error when nested inflate streams."
   :type :system
   :post-loadable t)
+
+#+(version= 10 0)
+(sys:defpatch "inflate" 1
+  "v1: avoid eof error when nested inflate streams."
+  :type :system
+  :post-loadable t)
+
 
 #|
 Programming interface:
@@ -1189,22 +1193,26 @@ into the inflate buffer.
 
 
 (without-package-locks
-  (defmethod excl::record-stream-advance-to-eof ((any t))
-    any)
-  (defmethod excl::record-stream-advance-to-eof ((p inflate-stream))
-    (let ((inner-handle (slot-value p 'excl::input-handle))
-	  (compression (inflate-compression-type p))
-	  trailer-bytes)
-      ;; skip the trailer, if there is one
-      (setq trailer-bytes
-	(case compression
-	  (:gzip (skip-gzip-trailer inner-handle))
-	  (:zlib (skip-zlib-trailer inner-handle))
-	  (:deflate 0)
-	  (t (and (second compression) (funcall (second compression) inner-handle)))))
-      (when trailer-bytes
-	(incf (bit-reader-bytes-read (inflate-stream-br p)) trailer-bytes))
-      (excl::record-stream-advance-to-eof inner-handle))))
+ (defmethod excl::record-stream-advance-to-eof ((any t))
+   any)
+ (defmethod excl::record-stream-advance-to-eof ((p inflate-stream))
+   (let ((inner-handle (slot-value p 'excl::input-handle))
+	 (compression (inflate-compression-type p))
+	 trailer-bytes)
+     ;; skip the trailer, if there is one
+     (setq trailer-bytes
+       (case compression
+	 (:gzip (skip-gzip-trailer inner-handle))
+	 (:zlib (skip-zlib-trailer inner-handle))
+	 (:deflate 0)
+	 (t (and (second compression) (funcall (second compression) inner-handle)))))
+     (when trailer-bytes
+       (incf (bit-reader-bytes-read (inflate-stream-br p)) trailer-bytes))
+     (cond ((and (typep inner-handle 'inflate-stream) (inflate-stream-eof inner-handle))
+	    ;; If we are dealing with nested compressed streams, the inner stream normally
+	    ;; reaches EOF first and has therefore already called this function. [bug25005]
+	    nil)
+	   (t (excl::record-stream-advance-to-eof inner-handle))))))
 	      
 #+ignore
 (defun teststr ()

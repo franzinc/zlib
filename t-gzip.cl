@@ -7,6 +7,11 @@
 
 (in-package :test)
 
+(defun test-zlib ()
+  (test-gzip)
+  (test-bug25005)
+  )
+
 (defun deflate-file (input-filename output-filename &optional (type :gzip))
   (with-open-file (in input-filename :direction :input)
     (with-open-file (out output-filename 
@@ -157,4 +162,49 @@
   
   (test-invalid-first-byte-in-header))
 
-(when *do-test* (do-test "gzip" #'test-gzip))
+
+(defun test-bug25005 ()
+  (flet ((gzip (data)
+	   (let ((stream (make-instance 'util.zip:deflate-stream
+			   :target (make-array 1000 :element-type '(unsigned-byte 8))
+			   :compression :gzip)))
+	     (write-sequence data stream)
+	     (close stream)
+	     (multiple-value-bind (result-vector len)
+		 (util.zip:deflate-stream-vector-combined stream)
+	       (subseq result-vector 0 len))))
+	 (read-stream-to-bytearray (stream &aux (ret (make-array 
+						      1000 :element-type '(unsigned-byte 8)
+						      :adjustable t :fill-pointer 0))
+						byte)
+	   (loop 
+	     (or (setq byte (read-byte stream nil nil))
+		 (return ret))
+	     (vector-push-extend byte ret)))
+	 (collect-bytes (stream &aux ch bytes)
+	   (loop
+	     (or (setq ch (read-byte stream nil nil))
+		 (return (concatenate 'string (reverse bytes))))
+	     (push (code-char ch) bytes)))
+	 )
+    (let ((double-gzipped-text (gzip (gzip "hello"))))
+      (format t "~&Testing double gzip via intermediate buffer...~%")
+      (let* ((i1 (make-instance 'util.zip:inflate-stream
+		   :compression :gzip
+		   :input-handle (make-buffer-input-stream double-gzipped-text)))
+	     (i2 (make-instance 'util.zip:inflate-stream
+		   :compression :gzip
+		   :input-handle (make-buffer-input-stream (read-stream-to-bytearray i1)))))
+	(test "hello" (collect-bytes i2) :test #'equal :fail-info "with intermediate buffer"))
+      (format t "~&Testing double gzip via nested streams...~%")
+      (let* ((i1 (make-instance 'util.zip:inflate-stream
+		   :compression :gzip
+		   :input-handle (make-buffer-input-stream double-gzipped-text)))
+	     (i2 (make-instance 'util.zip:inflate-stream
+		   :compression :gzip
+		   :input-handle i1)))
+	(test "hello" (collect-bytes i2) :test #'equal :fail-info "nested inflate streams"))
+      )))
+    
+
+(when *do-test* (do-test "gzip" #'test-zlib))
