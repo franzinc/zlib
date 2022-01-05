@@ -179,7 +179,8 @@ v1: add hook run when a deflate stream closes."
        ;; I don't know of a source for a 64-bit version of this library,
        ;; but it would be called this if there were one.
        "zlib1.dll")
-      ((:macosx86 :macosx86-64) "libz.1.dylib")
+      ((:macarm64 :macosx86 :macosx86-64)
+       "libz.1.dylib")
 ;;;; FreeBSD changes the name of this library more than other
 ;;;; platforms, which seem to keep it static between releases.
 ;;;; The values here are defined per ACL version, which seems the most
