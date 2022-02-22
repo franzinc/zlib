@@ -6,8 +6,9 @@
 ;; See the file LICENSE for the full license governing this code.
 
 #+(version= 10 1)
-(sys:defpatch "deflate" 1
-  "v1: internal change for aserve."
+(sys:defpatch "deflate" 2
+  "v2: distribute zlib1.dll on Windows;
+v1: internal change for aserve."
   :type :system
   :post-loadable t)
 
@@ -175,10 +176,7 @@ v1: add hook run when a deflate stream closes."
 (excl:without-package-locks
 (defvar sys::*zlib-system-library*
     (excl::machine-case :host
-      ((:msx86 :msx86-64)
-       ;; I don't know of a source for a 64-bit version of this library,
-       ;; but it would be called this if there were one.
-       "zlib1.dll")
+      ((:msx86 :msx86-64) "sys:zlib1.dll")
       ((:macarm64 :macosx86 :macosx86-64)
        "libz.1.dylib")
 ;;;; FreeBSD changes the name of this library more than other
