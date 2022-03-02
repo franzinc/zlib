@@ -5,3 +5,5 @@
 *.dll
 *.lib
 *.exp
+/build.tmp
+/test.out
