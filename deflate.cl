@@ -6,8 +6,9 @@
 ;; See the file LICENSE for the full license governing this code.
 
 #+(version= 10 1)
-(sys:defpatch "deflate" 2
-  "v2: distribute zlib1.dll on Windows;
+(sys:defpatch "deflate" 3
+  "v3: make sure on Windows zlib1.dll is not marked as a system library;
+v2: distribute zlib1.dll on Windows;
 v1: internal change for aserve."
   :type :system
   :post-loadable t)
@@ -193,7 +194,10 @@ v1: add hook run when a deflate stream closes."
 
 (defvar *zlib-dll-loaded* nil)
 (when (not *zlib-dll-loaded*)
-  (handler-case (load sys::*zlib-system-library* :system-library t :foreign t)
+  (handler-case (load sys::*zlib-system-library*
+		      ;; On Windows, zlib1.dll is NOT a system library
+		      :system-library #+mswindows nil #-mswindows t
+		      :foreign t)
     (error (c)
       (error "~
 This Allegro CL module requires the compression library named libz ~
