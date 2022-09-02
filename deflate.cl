@@ -172,6 +172,8 @@ v1: add hook run when a deflate stream closes."
    ;; end vector target
    ))
 
+;; Always loaded from 11.0 on:
+#-(version>= 11 0)
 (eval-when (compile load eval) (require :util-string))
 
 (excl:without-package-locks
