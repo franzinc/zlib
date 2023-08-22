@@ -180,6 +180,7 @@ v1: add hook run when a deflate stream closes."
 (defvar sys::*zlib-system-library*
     (excl::machine-case :host
       ((:msx86 :msx86-64) "sys:zlib1.dll")
+      #+(version>= 11)
       ((:macarm64 :macosx86 :macosx86-64)
        "libz.1.dylib")
 ;;;; FreeBSD changes the name of this library more than other
