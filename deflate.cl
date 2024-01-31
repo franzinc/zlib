@@ -5,9 +5,16 @@
 ;;
 ;; See the file LICENSE for the full license governing this code.
 
+#+(version= 11 0)
+(sys:defpatch "deflate" 1
+  "v1: dynamically find libz.1.dylib on macOS."
+  :type :system
+  :post-loadable t)
+
 #+(version= 10 1)
-(sys:defpatch "deflate" 3
-  "v3: make sure on Windows zlib1.dll is not marked as a system library;
+(sys:defpatch "deflate" 4
+  "v4: dynamically find libz.1.dylib on macOS;
+v3: make sure on Windows zlib1.dll is not marked as a system library;
 v2: distribute zlib1.dll on Windows;
 v1: internal change for aserve."
   :type :system
@@ -19,14 +26,6 @@ v1: internal change for aserve."
 v1: add hook run when a deflate stream closes."
   :type :system
   :post-loadable t)
-
-#+(version= 9 0)
-(sys:defpatch "deflate" 2
-  "v2: internal change for aserve;
-v1: add hook run when a deflate stream closes."
-  :type :system
-  :post-loadable t)
-
 
 (defpackage :util.zip
   (:use :common-lisp :excl)
@@ -176,13 +175,38 @@ v1: add hook run when a deflate stream closes."
 #-(version>= 11 0)
 (eval-when (compile load eval) (require :util-string))
 
+#+macosx
+(eval-when (compile eval load) (require :osi))
+
+#+macosx
+(defun macos-find-zlib ()
+  ;; The problem here is there is no system version.  We assume Homebrew is
+  ;; installed, and we use "brew --prefix zlib" to find the library.
+  (let ((brew (excl.osi:find-in-path "brew"))
+	command)
+    (when (null brew)
+      (error "~s is null and no Homebrew for libz.dylib."
+	     'sys::*zlib-system-library*))
+    (setq command (format nil "~a --prefix zlib" brew))
+    (multiple-value-bind (stdout stderr exit-status)
+	(excl.osi:command-output command :whole t)
+      (declare (ignore stderr))
+      (when (/= 0 exit-status) (error "~s failed" command))
+      (setq stdout (string-trim '(#\newline) stdout))
+      (when (not (probe-file stdout))
+	(error "~a does not exist." stdout))
+      (setq stdout (format nil "~a/lib/libz.1.dylib" stdout))
+      (when (not (probe-file stdout))
+	(error "~a does not exist." stdout))
+      stdout)))
+
 (excl:without-package-locks
 (defvar sys::*zlib-system-library*
     (excl::machine-case :host
       ((:msx86 :msx86-64) "sys:zlib1.dll")
-      #+(version>= 11)
-      ((:macarm64 :macosx86 :macosx86-64)
-       "libz.1.dylib")
+      #+macosx
+      ((#+(version>= 11) :macarm64 :macosx86 :macosx86-64)
+       #'macos-find-zlib)
 ;;;; FreeBSD changes the name of this library more than other
 ;;;; platforms, which seem to keep it static between releases.
 ;;;; The values here are defined per ACL version, which seems the most
@@ -197,6 +221,10 @@ v1: add hook run when a deflate stream closes."
 
 (defvar *zlib-dll-loaded* nil)
 (when (not *zlib-dll-loaded*)
+  ;; Only executed on macOS, but might be useful for other systems.
+  (when (and sys::*zlib-system-library*
+	     (functionp sys::*zlib-system-library*))
+    (setq sys::*zlib-system-library* (funcall sys::*zlib-system-library*)))
   (handler-case (load sys::*zlib-system-library*
 		      ;; On Windows, zlib1.dll is NOT a system library
 		      :system-library #+mswindows nil #-mswindows t
